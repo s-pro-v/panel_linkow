@@ -15,6 +15,11 @@ document.addEventListener("DOMContentLoaded", () => {
   let cachedPatToken = null;
   let tokenSource = null;
   let encryptedPat = null;
+  let editorRef = null;
+  let currentFilePath = null;
+  let editorBaseline = "";
+  let repoTreePaths = [];
+  let confirmResolver = null;
 
   const accountOverlay = document.getElementById("accountModalOverlay");
   const accountModal = document.getElementById("accountModal");
@@ -33,24 +38,95 @@ document.addEventListener("DOMContentLoaded", () => {
   const statusSend = document.getElementById("statusSend");
   const statusMessage = document.getElementById("statusMessage");
   const themeButton = document.getElementById("btn-theme");
+  const repoTreeEl = document.getElementById("repoTree");
+  const repoTreeActivePath = document.getElementById("repoTreeActivePath");
+  const editorFileLabel = document.getElementById("editorFileLabel");
+  const refreshTreeButton = document.getElementById("btn-refresh-tree");
+  const confirmOverlay = document.getElementById("confirmOverlay");
+  const confirmModal = document.getElementById("confirmModal");
+  const confirmTitle = document.getElementById("confirmModalTitle");
+  const confirmMessage = document.getElementById("confirmModalMessage");
+  const confirmCancel = document.getElementById("confirmModalCancel");
+  const confirmOk = document.getElementById("confirmModalConfirm");
+  const confirmClose = document.getElementById("confirmModalClose");
+  const toastContainer = document.getElementById("toast-container");
 
   if (typeof IndustrialHUD !== "undefined") {
     IndustrialHUD.init("#app", { themeRoot: document.documentElement });
   }
 
+  function closeDialog(result = false) {
+    confirmOverlay?.classList.remove("active");
+    confirmModal?.classList.remove("active", "is-notice");
+    if (!confirmResolver) return;
+    const resolve = confirmResolver;
+    confirmResolver = null;
+    resolve(result);
+  }
+
+  function showDialog(title, message, notice = false, type = "warning") {
+    return new Promise((resolve) => {
+      if (confirmResolver) confirmResolver(false);
+      confirmResolver = resolve;
+      if (confirmTitle) confirmTitle.textContent = title;
+      if (confirmMessage) confirmMessage.textContent = message;
+      confirmModal?.setAttribute("data-alert-type", type);
+      confirmModal?.classList.toggle("is-notice", notice);
+      confirmOverlay?.classList.add("active");
+      confirmModal?.classList.add("active");
+    });
+  }
+
+  function removeToast(el) {
+    if (!el?.isConnected) return;
+    el.classList.add("closing");
+    setTimeout(() => el.remove(), 300);
+  }
+
+  // Powiadomienia idą na toasty, żeby nie blokowały drugim modalem po confirm
   function showNotice(title, message, level = "info") {
     if (typeof IndustrialHUD !== "undefined") {
       IndustrialHUD.toast(level, title, message, 4000);
       return Promise.resolve(true);
     }
-    return Promise.resolve(window.alert(`${title}\n${message}`));
+    if (!toastContainer) {
+      return showDialog(title, message, true, level);
+    }
+
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${level}`;
+
+    const header = document.createElement("div");
+    header.className = "toast-header";
+
+    const label = document.createElement("span");
+    label.className = "toast-label";
+    label.textContent = title;
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "toast-close";
+    close.setAttribute("aria-label", "Zamknij");
+    close.innerHTML = '<i class="fas fa-times"></i>';
+    close.addEventListener("click", () => removeToast(toast));
+
+    const body = document.createElement("p");
+    body.className = "toast-message";
+    body.textContent = message;
+
+    header.append(label, close);
+    toast.append(header, body);
+    toastContainer.appendChild(toast);
+
+    setTimeout(() => toast.remove(), 5100);
+    return Promise.resolve(true);
   }
 
   function showConfirm(title, message, type = "warning") {
     if (typeof IndustrialHUD !== "undefined") {
       return IndustrialHUD.confirm({ type, title, message });
     }
-    return Promise.resolve(window.confirm(`${title}\n${message}`));
+    return showDialog(title, message, false, type);
   }
 
   function sanitizeUrl(url) {
@@ -111,9 +187,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function setChipState(el, text, state = "") {
     if (!el) return;
+    const chip = el.closest(".status-chip");
+    const states = ["is-ok", "is-warn", "is-error", "is-busy"];
     el.textContent = text;
-    el.classList.remove("is-ok", "is-warn", "is-error", "is-busy");
-    if (state) el.classList.add(state);
+    el.classList.remove(...states);
+    chip?.classList.remove(...states);
+    if (state) {
+      el.classList.add(state);
+      chip?.classList.add(state);
+    }
+  }
+
+  function getMessageState(message, fallback = "") {
+    if (fallback) return fallback;
+    if (/\b(fail|err|błąd)\b/i.test(message)) return "is-error";
+    if (/\b(wait|warn|brak|anulowan|wpisz)\b/i.test(message)) return "is-warn";
+    if (
+      /…|\b(pobieranie|otwieranie|wysyłanie|przygotowanie)\b/i.test(message)
+    ) {
+      return "is-busy";
+    }
+    if (/\b(ok|aktywny|zapisano|zapisany|odświeżona)\b/i.test(message)) {
+      return "is-ok";
+    }
+    return "";
   }
 
   function setSystemStatus({
@@ -124,12 +221,20 @@ document.addEventListener("DOMContentLoaded", () => {
     send,
     sendState,
     message,
+    messageState,
   } = {}) {
     if (token !== undefined) setChipState(statusToken, token, tokenState);
     if (load !== undefined) setChipState(statusLoad, load, loadState);
     if (send !== undefined) setChipState(statusSend, send, sendState);
     if (message !== undefined && statusMessage) {
-      statusMessage.textContent = message;
+      setChipState(
+        statusMessage,
+        message,
+        getMessageState(
+          message,
+          messageState || tokenState || loadState || sendState,
+        ),
+      );
     }
     if (message !== undefined && accountOpStatus) {
       accountOpStatus.textContent = `Ostatnia operacja: ${message}`;
@@ -448,6 +553,212 @@ document.addEventListener("DOMContentLoaded", () => {
     return putRes.json();
   }
 
+  function isEditorDirty() {
+    if (!editorRef) return false;
+    return editorRef.getValue() !== editorBaseline;
+  }
+
+  function markEditorClean(value = editorRef?.getValue() || "") {
+    editorBaseline = value;
+  }
+
+  function setActiveFilePath(path) {
+    currentFilePath = path || null;
+    if (repoTreeActivePath) {
+      repoTreeActivePath.textContent = path || "—";
+      repoTreeActivePath.title = path || "";
+    }
+    if (editorFileLabel) {
+      editorFileLabel.textContent = path
+        ? path.split("/").pop()
+        : "JSON Editor";
+    }
+
+    repoTreeEl?.querySelectorAll(".repo-tree-file.active").forEach((el) => {
+      el.classList.remove("active");
+    });
+    if (path) {
+      const active = repoTreeEl?.querySelector(
+        `.repo-tree-file[data-path="${CSS.escape(path)}"]`,
+      );
+      active?.classList.add("active");
+    }
+  }
+
+  function buildTreeNodes(paths) {
+    const root = { name: "", children: new Map(), files: [] };
+
+    for (const path of paths) {
+      const parts = path.split("/").filter(Boolean);
+      let node = root;
+      parts.forEach((part, index) => {
+        const isFile = index === parts.length - 1;
+        if (isFile) {
+          node.files.push({ name: part, path });
+          return;
+        }
+        if (!node.children.has(part)) {
+          node.children.set(part, {
+            name: part,
+            children: new Map(),
+            files: [],
+          });
+        }
+        node = node.children.get(part);
+      });
+    }
+
+    return root;
+  }
+
+  function renderTreeNode(node, depth = 0) {
+    const frag = document.createDocumentFragment();
+    const folders = [...node.children.values()].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+    const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const folder of folders) {
+      const wrap = document.createElement("div");
+      wrap.className = "repo-tree-node open";
+      wrap.style.setProperty("--depth", String(depth));
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "repo-tree-folder";
+      btn.style.paddingLeft = `${0.55 + depth * 0.75}rem`;
+      btn.innerHTML = `<i class="fas fa-folder"></i><i class="fas fa-folder-open"></i><span>${folder.name}</span>`;
+      btn.addEventListener("click", () => {
+        wrap.classList.toggle("open");
+      });
+
+      const kids = document.createElement("div");
+      kids.className = "repo-tree-children";
+      kids.appendChild(renderTreeNode(folder, depth + 1));
+
+      wrap.appendChild(btn);
+      wrap.appendChild(kids);
+      frag.appendChild(wrap);
+    }
+
+    for (const file of files) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "repo-tree-file";
+      btn.dataset.path = file.path;
+      btn.style.paddingLeft = `${0.55 + depth * 0.75}rem`;
+      btn.title = file.path;
+      btn.innerHTML = `<i-icon class="repo-tree-json-icon" name="swagger" color="#ffb74d" size="18"></i-icon><span>${file.name}</span>`;
+      if (file.path === currentFilePath) btn.classList.add("active");
+      btn.addEventListener("click", () => {
+        openRepoFile(file.path);
+      });
+      frag.appendChild(btn);
+    }
+
+    return frag;
+  }
+
+  function renderRepoTree(paths) {
+    if (!repoTreeEl) return;
+    repoTreeEl.innerHTML = "";
+    if (!paths.length) {
+      repoTreeEl.innerHTML =
+        '<div class="repo-tree-empty">Brak plików w repozytorium.</div>';
+      return;
+    }
+    repoTreeEl.appendChild(renderTreeNode(buildTreeNodes(paths)));
+  }
+
+  async function fetchRepoTree(settings = loadAccountSettings()) {
+    const owner = settings.owner || defaults.owner;
+    const repo = settings.repo || defaults.repo;
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/main?recursive=1&t=${Date.now()}`;
+    const headers = {
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    };
+
+    try {
+      const token = cachedPatToken || (settings.token || "").trim();
+      if (token) headers.Authorization = `Bearer ${token}`;
+    } catch (_) {}
+
+    if (repoTreeEl) {
+      repoTreeEl.innerHTML =
+        '<div class="repo-tree-empty">Ładowanie drzewa…</div>';
+    }
+
+    const res = await fetch(apiUrl, { ...NO_CACHE_INIT, headers });
+    if (!res.ok) {
+      throw new Error(`Nie udało się pobrać drzewa (${res.status})`);
+    }
+
+    const data = await res.json();
+    const paths = (data.tree || [])
+      .filter((item) => item.type === "blob")
+      .map((item) => item.path)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+
+    repoTreePaths = paths;
+    renderRepoTree(paths);
+    setSystemStatus({
+      message: `Drzewo OK — ${paths.length} plików (${owner}/${repo})`,
+    });
+    return paths;
+  }
+
+  async function openRepoFile(path, { force = false } = {}) {
+    if (!path) return;
+    if (!force && path === currentFilePath && !isEditorDirty()) return;
+
+    if (!force && isEditorDirty()) {
+      const confirmed = await showConfirm(
+        "Niezapisane zmiany",
+        `Masz niezapisane zmiany w ${currentFilePath || "edytorze"}. Otworzyć ${path} i porzucić je?`,
+      );
+      if (!confirmed) return;
+    }
+
+    const settings = {
+      ...loadAccountSettings(),
+      path,
+    };
+    saveAccountSettings(settings);
+    if (ghPathInput) ghPathInput.value = path;
+
+    setSystemStatus({
+      load: "...",
+      loadState: "is-busy",
+      message: `Otwieranie ${path}…`,
+    });
+
+    try {
+      const data = await fetchJsonWithFallback(settings);
+      const text = JSON.stringify(data, null, 2);
+      if (editorRef) {
+        editorRef.setValue(text);
+        markEditorClean(text);
+      } else {
+        editorBaseline = text;
+      }
+      setActiveFilePath(path);
+      setSystemStatus({
+        load: "OK",
+        loadState: "is-ok",
+        message: `OPEN OK — ${path}`,
+      });
+    } catch (error) {
+      setSystemStatus({
+        load: "ERR",
+        loadState: "is-error",
+        message: `OPEN FAIL: ${error.message}`,
+      });
+      await showNotice("Błąd otwarcia", error.message, "critical");
+    }
+  }
+
   function applyMonacoTheme(theme) {
     if (!window.monaco?.editor) return;
 
@@ -482,6 +793,9 @@ document.addEventListener("DOMContentLoaded", () => {
         icon.classList.toggle("fa-sun", !isLight);
         icon.classList.toggle("fa-moon", isLight);
       }
+      const targetTheme = isLight ? "ciemny" : "jasny";
+      themeButton.setAttribute("aria-label", `Włącz motyw ${targetTheme}`);
+      themeButton.title = `Włącz motyw ${targetTheme}`;
       themeButton.setAttribute("aria-pressed", String(!isLight));
     }
 
@@ -495,6 +809,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const bootSettings = loadAccountSettings();
   fillAccountForm(bootSettings);
   setAuthFetched(false);
+  setActiveFilePath(bootSettings.path || defaults.path);
   if (bootSettings.token) {
     cachedPatToken = bootSettings.token;
     updateTokenStatus(true, "manual");
@@ -502,6 +817,28 @@ document.addEventListener("DOMContentLoaded", () => {
     // Krok 1 leci od razu w tle — po wpisaniu hasła zostaje tylko deszyfracja
     autoFetchAuth();
   }
+
+  fetchRepoTree(bootSettings).catch(async (error) => {
+    if (repoTreeEl) {
+      repoTreeEl.innerHTML = `<div class="repo-tree-error">Drzewo FAIL: ${error.message}</div>`;
+    }
+    setSystemStatus({
+      message: `Drzewo FAIL: ${error.message}`,
+    });
+  });
+
+  refreshTreeButton?.addEventListener("click", async () => {
+    try {
+      await fetchRepoTree(loadAccountSettings());
+      if (currentFilePath) setActiveFilePath(currentFilePath);
+      await showNotice("Drzewo", "Lista plików odświeżona.", "success");
+    } catch (error) {
+      if (repoTreeEl) {
+        repoTreeEl.innerHTML = `<div class="repo-tree-error">Drzewo FAIL: ${error.message}</div>`;
+      }
+      await showNotice("Błąd drzewa", error.message, "critical");
+    }
+  });
 
   themeButton?.addEventListener("click", () => {
     const current =
@@ -520,9 +857,17 @@ document.addEventListener("DOMContentLoaded", () => {
     .getElementById("accountModalClose")
     ?.addEventListener("click", closeAccountModal);
   accountOverlay?.addEventListener("click", closeAccountModal);
+  confirmOk?.addEventListener("click", () => closeDialog(true));
+  confirmCancel?.addEventListener("click", () => closeDialog(false));
+  confirmClose?.addEventListener("click", () => closeDialog(false));
+  confirmOverlay?.addEventListener("click", () => closeDialog(false));
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (confirmModal?.classList.contains("active")) {
+      closeDialog(false);
+      return;
+    }
     closeAccountModal();
   });
 
@@ -658,10 +1003,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const editor = monaco.editor.create(editorContainer, {
         value:
-          "[\n  // Kliknij 'Pobierz z GitHub', aby wczytać plik home.json\n]",
+          "[\n  // Kliknij plik po lewej albo 'Pobierz', aby wczytać JSON\n]",
         language: "json",
         automaticLayout: true,
       });
+      editorRef = editor;
+      markEditorClean(editor.getValue());
 
       if (
         window.MonacoEditorSettings &&
@@ -723,6 +1070,14 @@ document.addEventListener("DOMContentLoaded", () => {
         .getElementById("btn-load")
         .addEventListener("click", async () => {
           try {
+            if (isEditorDirty()) {
+              const confirmed = await showConfirm(
+                "Niezapisane zmiany",
+                "Masz lokalne zmiany. Nadpisać edytor danymi z GitHub?",
+              );
+              if (!confirmed) return;
+            }
+
             setSystemStatus({
               load: "...",
               loadState: "is-busy",
@@ -731,6 +1086,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const settings = loadAccountSettings();
             const data = await fetchJsonWithFallback(settings);
             setJsonValue(data);
+            markEditorClean(editor.getValue());
+            setActiveFilePath(settings.path);
             const count = Array.isArray(data) ? data.length : 1;
             setSystemStatus({
               load: "OK",
@@ -860,6 +1217,10 @@ document.addEventListener("DOMContentLoaded", () => {
               result?.commit?.sha?.slice(0, 7) ||
               result?.content?.sha?.slice(0, 7) ||
               "ok";
+
+            markEditorClean(editor.getValue());
+            setActiveFilePath(settings.path);
+            await fetchRepoTree(settings).catch(() => {});
 
             setSystemStatus({
               send: "OK",

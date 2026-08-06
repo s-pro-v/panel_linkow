@@ -8,152 +8,179 @@
     <title>Panel zarządzania — Industrial HUD</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/gh/s-pro-v/Industrial_HUD_Framework@4f326b9/dist/css/industrial-hud.css">
+
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/s-pro-v/Industrial-HUD@main/css/alert.css">
 </head>
 
 <body>
-    <div class="container" id="app">
-        <div class="container panel-shell">
-            <header class="hud-header">
-                <h1>
-                    <i class="fas fa-microchip" style="margin-right:8px;color:var(--highlight-color)"></i>
-                    Panel JSON
-                </h1>
-                <div class="system-meta">
-                    <span class="system-meta-item system-meta-general">
-                        <i class="fas fa-key"></i> TOKEN:
-                        <span class="system-meta-item-value" id="statusToken">BRAK</span>
-                    </span>
-                    <span class="system-meta-item system-meta-general">
-                        <i class="fas fa-cloud-arrow-down"></i> LOAD:
-                        <span class="system-meta-item-value" id="statusLoad">—</span>
-                    </span>
-                    <span class="system-meta-item system-meta-general">
-                        <i class="fas fa-paper-plane"></i> SEND:
-                        <span class="system-meta-item-value" id="statusSend">—</span>
-                    </span>
-                </div>
-            </header>
+    <div class="app-panel" id="app">
+        <nav class="app-nav">
+            <button class="nav-pill active" type="button">
+                <i class="fas fa-code"></i> <span id="editorFileLabel">JSON Editor</span>
+            </button>
+            <button class="nav-pill theme-toggle" id="btn-theme" type="button" aria-pressed="true">
+                <i class="fas fa-moon theme-toggle__icon"></i>
+            </button>
+        </nav>
 
-            <div class="action-bar panel">
-                <button class="btn-md btn-ripple" id="btn-load" type="button">
-                    <i class="fas fa-cloud-arrow-down"></i> Pobierz
-                </button>
-                <button class="btn-md btn-ripple" id="btn-add" type="button">
-                    <i class="fas fa-plus"></i> Dodaj
-                </button>
-                <button class="btn-md btn-ripple" id="btn-remove" type="button">
-                    <i class="fas fa-minus"></i> Usuń
-                </button>
-                <button class="btn-md btn-ripple" id="btn-send" type="button">
-                    <i class="fas fa-paper-plane"></i> Wyślij
-                </button>
-                <button class="btn-md btn-ripple" id="btn-settings" type="button">
-                    <i class="fas fa-gear"></i> Ustawienia
-                </button>
-                <button class="btn-md btn-ripple" id="btn-account" type="button">
-                    <i class="fas fa-user-gear"></i> Konto
-                </button>
-                <button class="btn-md btn-ripple" id="btn-theme" type="button" aria-pressed="true"
-                    style="margin-left:auto">
-                    <i class="fas fa-moon theme-toggle__icon"></i>
-                    <span class="theme-toggle__label">Jasny</span>
-                </button>
-            </div>
-
-            <p class="status-message" id="statusMessage" aria-live="polite">Oczekiwanie na akcję</p>
-
-            <div class="workspace">
-                <div class="terminal-panel panel-editor">
-                    <div class="terminal-label">
-                        <span><i class="fas fa-code"></i> JSON Editor</span>
-                        <span style="color:var(--highlight-color)">MONACO</span>
+        <div class="app-panels">
+            <aside class="app-aside repo-tree-panel" aria-label="Drzewo plików json-lista">
+                <div class="repo-tree-header">
+                    <div>
+                        <h1 class="aside-title repo-tree-title">
+                            <i-icon name="swagger" color="#ffb74d" size="22"></i-icon>
+                            <span>JSON LISTA</span>
+                        </h1>
+                        <p class="aside-subtitle">Repozytorium GitHub</p>
                     </div>
-                    <div class="editor-container" id="editor-container"></div>
+                    <button class="repo-tree-refresh" id="btn-refresh-tree" type="button" title="Odśwież drzewo"
+                        aria-label="Odśwież drzewo">
+                        <i class="fas fa-rotate"></i>
+                    </button>
                 </div>
-            </div>
-        </div>
+                <div class="repo-tree-meta">
+                    <a href="https://github.com/s-pro-v/json-lista" target="_blank" rel="noopener noreferrer">
+                        <i class="fab fa-github"></i> s-pro-v/json-lista
+                    </a>
+                    <span id="repoTreeActivePath">—</span>
+                </div>
+                <div class="repo-tree" id="repoTree" role="tree">
+                    <div class="repo-tree-empty">Ładowanie drzewa…</div>
+                </div>
+                <button class="btn-privacy" id="btn-account" type="button">
+                    <i class="fas fa-user-gear"></i>
+                    <span>Ustawienia konta</span>
+                </button>
+            </aside>
 
-        <!-- Modal ustawień konta -->
-        <div class="modal-overlay" id="accountModalOverlay"></div>
-        <div class="modal" id="accountModal" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle">
-            <div class="modal-header">
-                <span id="accountModalTitle">Ustawienia konta</span>
-                <button class="close-modal btn-ripple" id="accountModalClose" type="button" aria-label="Zamknij">
+            <main class="app-content">
+                <div class="toolbar">
+                    <button class="glass-btn" id="btn-load" type="button">
+                        <i class="fas fa-cloud-arrow-down glass-btn__data-icon"></i>
+                        <span class="glass-btn__label">POBIERZ</span>
+                        <span class="glass-btn__desc">GITHUB</span>
+                    </button>
+                    <button class="glass-btn" id="btn-add" type="button">
+                        <i class="fas fa-plus glass-btn__data-icon"></i>
+                        <span class="glass-btn__label">DODAJ</span>
+                        <span class="glass-btn__desc">ELEMENT</span>
+                    </button>
+                    <button class="glass-btn" id="btn-remove" type="button">
+                        <i class="fas fa-minus glass-btn__data-icon"></i>
+                        <span class="glass-btn__label">USUŃ</span>
+                        <span class="glass-btn__desc">OSTATNI</span>
+                    </button>
+                    <button class="glass-btn highlight" id="btn-send" type="button">
+                        <i class="fas fa-paper-plane glass-btn__data-icon"></i>
+                        <span class="glass-btn__label">WYŚLIJ</span>
+                        <span class="glass-btn__desc">GITHUB</span>
+                    </button>
+                    <button class="glass-btn" id="btn-settings" type="button">
+                        <i class="fas fa-gear glass-btn__data-icon"></i>
+                        <span class="glass-btn__label">USTAWIENIA</span>
+                        <span class="glass-btn__desc">MONACO</span>
+                    </button>
+                </div>
+
+                <div class="status-bar" aria-live="polite">
+                    <span class="status-chip" data-key="token">
+                        <span class="status-chip__label">TOKEN</span>
+                        <span class="status-chip__value" id="statusToken">BRAK</span>
+                    </span>
+                    <span class="status-chip" data-key="load">
+                        <span class="status-chip__label">LOAD</span>
+                        <span class="status-chip__value" id="statusLoad">—</span>
+                    </span>
+                    <span class="status-chip" data-key="send">
+                        <span class="status-chip__label">SEND</span>
+                        <span class="status-chip__value" id="statusSend">—</span>
+                    </span>
+                    <span class="status-chip status-chip--msg">
+                        <span class="status-chip__value" id="statusMessage">Oczekiwanie na akcję</span>
+                    </span>
+                </div>
+
+                <div id="editor-container"></div>
+            </main>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="accountModalOverlay"></div>
+    <div class="modal" id="accountModal" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle">
+        <div class="modal-header">
+            <span id="accountModalTitle">Ustawienia konta</span>
+            <button class="close-modal" id="accountModalClose" type="button" aria-label="Zamknij">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <label class="modal-field"><span>GitHub user</span>
+                <input class="hud-input" id="gh-owner" type="text" autocomplete="off" spellcheck="false">
+            </label>
+            <label class="modal-field"><span>Repozytorium</span>
+                <input class="hud-input" id="gh-repo" type="text" autocomplete="off" spellcheck="false">
+            </label>
+            <label class="modal-field"><span>Ścieżka pliku</span>
+                <input class="hud-input" id="gh-path" type="text" autocomplete="off" spellcheck="false">
+            </label>
+            <p class="modal-hint">1. Pobierz auth.json → 2. wpisz hasło → 3. odszyfruj</p>
+            <label class="modal-field"><span>Hasło XOR (deszyfracja)</span>
+                <input class="hud-input" id="gh-xor-key" type="password" autocomplete="off" spellcheck="false"
+                    placeholder="najpierw pobierz auth.json" disabled>
+            </label>
+            <label class="modal-field"><span>Token (opcjonalnie ręcznie)</span>
+                <input class="hud-input" id="gh-token" type="password" autocomplete="off" spellcheck="false"
+                    placeholder="github_pat_…">
+            </label>
+            <p class="modal-status" id="accountAuthStatus">Auth: nie pobrano</p>
+            <p class="modal-status" id="accountTokenStatus">Token: brak</p>
+            <p class="modal-status" id="accountOpStatus">Ostatnia operacja: —</p>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-action-btn" id="btn-fetch-auth" type="button">
+                <i class="fas fa-download"></i>
+                <span>Pobierz auth</span>
+            </button>
+            <button class="modal-action-btn" id="btn-decrypt-token" type="button" disabled>
+                <i class="fas fa-key"></i>
+                <span>Odszyfruj</span>
+            </button>
+            <button class="modal-action-btn modal-action-btn--primary" id="btn-save-account" type="button">
+                <i class="fas fa-floppy-disk"></i>
+                <span>Zapisz</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="confirmOverlay"></div>
+    <div class="system-alert-modal" id="confirmModal" role="dialog" aria-modal="true"
+        aria-labelledby="confirmModalTitle" aria-describedby="confirmModalMessage" data-alert-type="warning">
+        <div class="modal-content">
+            <div class="system-alert-header">
+                <span class="system-alert-title" id="confirmModalTitle">Potwierdzenie</span>
+                <button class="close-btn btn-ripple" id="confirmModalClose" type="button" aria-label="Zamknij">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div class="modal-body">
-                <label class="modal-field">
-                    <span>GitHub user</span>
-                    <input class="hud-input" id="gh-owner" type="text" autocomplete="off" spellcheck="false">
-                </label>
-                <label class="modal-field">
-                    <span>Repozytorium</span>
-                    <input class="hud-input" id="gh-repo" type="text" autocomplete="off" spellcheck="false">
-                </label>
-                <label class="modal-field">
-                    <span>Ścieżka pliku</span>
-                    <input class="hud-input" id="gh-path" type="text" autocomplete="off" spellcheck="false">
-                </label>
-                <p class="modal-hint">1. Pobierz auth.json → 2. wpisz hasło → 3. odszyfruj</p>
-                <label class="modal-field">
-                    <span>Hasło XOR (deszyfracja)</span>
-                    <input class="hud-input" id="gh-xor-key" type="password" autocomplete="off" spellcheck="false"
-                        placeholder="najpierw pobierz auth.json" disabled>
-                </label>
-                <label class="modal-field">
-                    <span>Token (opcjonalnie ręcznie)</span>
-                    <input class="hud-input" id="gh-token" type="password" autocomplete="off" spellcheck="false"
-                        placeholder="github_pat_…">
-                </label>
-                <p class="modal-status" id="accountAuthStatus">Auth: nie pobrano</p>
-                <p class="modal-status" id="accountTokenStatus">Token: brak</p>
-                <p class="modal-status" id="accountOpStatus">Ostatnia operacja: —</p>
+            <div class="system-alert-body">
+                <p class="confirm-message" id="confirmModalMessage"></p>
             </div>
-            <div class="modal-footer">
-                <button class="btn-md btn-ripple" id="btn-fetch-auth" type="button">
-                    <i class="fas fa-download"></i> Pobierz
+            <div class="system-alert-footer">
+                <button class="cancel-btn btn-ripple" id="confirmModalCancel" type="button">
+                    <i class="fas fa-ban"></i> Anuluj
                 </button>
-                <button class="btn-md btn-ripple" id="btn-decrypt-token" type="button" disabled>
-                    <i class="fas fa-key"></i> Odszyfruj
-                </button>
-                <button class="btn-md btn-ripple" id="btn-save-account" type="button">
-                    <i class="fas fa-floppy-disk"></i> Zapisz
+                <button class="system-alert-btn system-alert-btn-primary btn-ripple" id="confirmModalConfirm"
+                    type="button">
+                    <i class="fas fa-check"></i> Potwierdź
                 </button>
             </div>
         </div>
-
-        <!-- Confirm Industrial HUD -->
-        <div class="modal-overlay" id="confirmOverlay" aria-hidden="true"></div>
-        <div class="system-alert-modal" id="confirmModal" role="dialog" aria-modal="true"
-            aria-labelledby="confirmModalTitle" aria-describedby="confirmModalMessage" data-alert-type="info">
-            <div class="modal-content">
-                <div class="system-alert-header">
-                    <span class="system-alert-title" id="confirmModalTitle">Potwierdzenie</span>
-                    <button type="button" class="close-btn btn-ripple" id="confirmModalClose" aria-label="Zamknij">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-                <div class="system-alert-body">
-                    <div class="system-alert-main-title" id="confirmModalMainTitle">Tytuł</div>
-                    <p class="confirm-message" id="confirmModalMessage">Wiadomość</p>
-                </div>
-                <div class="system-alert-footer">
-                    <button type="button" class="cancel-btn btn-ripple" id="confirmModalCancel">Anuluj</button>
-                    <button type="button" class="system-alert-btn system-alert-btn-primary btn-ripple"
-                        id="confirmModalConfirm">Potwierdź</button>
-                </div>
-            </div>
-        </div>
-
-        <div id="toast-container" class="toast-container" aria-live="polite"></div>
     </div>
 
-    <script
-        src="https://cdn.jsdelivr.net/gh/s-pro-v/Industrial_HUD_Framework@4f326b9/dist/js/industrial-hud.js"></script>
+    <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+
     <script src="https://cdn.jsdelivr.net/gh/s-pro-v/icon-data@master/cdn.js"></script>
     <script src="lks.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs/loader.min.js"></script>
