@@ -1,0 +1,122 @@
+/* Panel layout — Industrial HUD Framework dostarcza resztę z CDN */
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+}
+
+#app {
+    min-height: 100%;
+}
+
+.panel-shell {
+    display: flex;
+    flex-direction: column;
+
+    gap: 0.75rem;
+    padding-bottom: 1rem;
+}
+
+.panel-shell .workspace {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+}
+
+.panel-editor {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+}
+
+.status-message {
+    margin: 0;
+    padding: 0.35rem 0.6rem;
+    font-family: var(--font-mono, "JetBrains Mono", monospace);
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    border: 1px dashed var(--border-color);
+    background: var(--panel-bg);
+}
+
+.system-meta-item-value.is-ok {
+    color: var(--success-color);
+}
+
+.system-meta-item-value.is-warn {
+    color: var(--warning-color);
+}
+
+.system-meta-item-value.is-error {
+    color: var(--danger-color);
+}
+
+.system-meta-item-value.is-busy {
+    color: var(--highlight-color);
+}
+
+.modal-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 0.75rem;
+}
+
+.modal-field span {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.modal-field input:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.modal-hint {
+    margin: 0 0 0.75rem;
+    font-size: 0.75rem;
+    color: var(--highlight-color);
+}
+
+.modal-status {
+    margin: 0.25rem 0 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.modal-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    justify-content: center;
+    box-shadow: var(--shadow-inset);
+    padding: 0.75rem 1rem;
+    height: 44px;
+}
+
+button:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.editor-container {
+    min-height: 800px;
+}
+.terminal-label,
+.hud-header {
+    background: var(--panel-bg);
+}
+.btn-md {
+    min-width: 8.5rem;
+}
