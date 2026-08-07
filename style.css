@@ -854,14 +854,15 @@ body::before {
 }
 
 .glass-btn:not(.glass-btn--oi-privacy) .glass-btn__label {
-    color: var(--oi-text);
+    color: var(--oi-text-color);
     letter-spacing: var(--oi-letter-spacing-btn);
-    text-shadow: 0 2px 3px black;
+    text-shadow: 0 1px 1px var(--oi-color-32);
 }
 
 .glass-btn:not(.glass-btn--oi-privacy) .glass-btn__desc {
     color: var(--oi-text-muted);
-    text-shadow: 0 1px 2px black;
+    text-shadow: 0 1px 1px black;
+    letter-spacing: 0.2em;
 }
 
 .glass-btn:hover {
@@ -1143,6 +1144,83 @@ body::before {
     color: var(--oi-text-muted);
     letter-spacing: 0.04em;
     text-transform: uppercase;
+}
+
+.template-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.6rem;
+}
+
+.template-card {
+    display: block;
+    cursor: pointer;
+}
+
+.template-card input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.template-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-height: 4.2rem;
+    padding: 0.25rem 0.7rem;
+    border: 1px solid var(--oi-border-color);
+    background: var(--oi-card-bg);
+    color: var(--oi-text-muted);
+    transition:
+        border-color var(--oi-transition-base),
+        background var(--oi-transition-base),
+        color var(--oi-transition-base);
+}
+
+.template-card__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--oi-font-display);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--oi-text-primary);
+}
+
+.template-card__desc {
+    font-family: var(--oi-font-mono);
+    font-size: 0.68rem;
+    color: var(--oi-text-muted);
+}
+
+.template-card:hover .template-card__body,
+.template-card input:focus-visible + .template-card__body {
+    border-color: var(--oi-highlight-color);
+    background: var(--oi-hover-bg);
+}
+
+.template-card input:checked + .template-card__body {
+    border-color: var(--oi-highlight-color);
+    background: color-mix(in srgb, var(--oi-highlight-color) 10%, var(--oi-card-bg));
+    box-shadow: inset 0px -3px 0 var(--oi-highlight-color);
+}
+
+.template-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.template-fields[hidden] {
+    display: none;
+}
+
+@media (max-width: 720px) {
+    .template-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* --- INPUT (text) --- */

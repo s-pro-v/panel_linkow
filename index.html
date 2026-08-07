@@ -153,6 +153,108 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="templateModalOverlay"></div>
+    <div class="modal" id="templateModal" role="dialog" aria-modal="true" aria-labelledby="templateModalTitle">
+        <div class="modal-header">
+            <span id="templateModalTitle">Dodaj element</span>
+            <button class="close-modal" id="templateModalClose" type="button" aria-label="Zamknij">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-hint">Wybierz szablon elementu</p>
+            <div class="template-grid" role="radiogroup" aria-label="Szablon">
+                <label class="template-card">
+                    <input type="radio" name="item-template" value="home" checked>
+                    <span class="template-card__body">
+                        <span class="template-card__title">
+                            <i class="fas fa-house"></i> home.json
+                        </span>
+                        <span class="template-card__desc">{ id, name, url, type, status }</span>
+                    </span>
+                </label>
+                <label class="template-card">
+                    <input type="radio" name="item-template" value="auth">
+                    <span class="template-card__body">
+                        <span class="template-card__title">
+                            <i class="fas fa-key"></i> auth.json
+                        </span>
+                        <span class="template-card__desc">{ "klucz": "wartość" }</span>
+                    </span>
+                </label>
+                <label class="template-card">
+                    <input type="radio" name="item-template" value="linki">
+                    <span class="template-card__body">
+                        <span class="template-card__title">
+                            <i class="fas fa-link"></i> linki.json
+                        </span>
+                        <span class="template-card__desc">{ id, name, url }</span>
+                    </span>
+                </label>
+            </div>
+
+            <div class="template-fields" data-template="home">
+                <label class="modal-field"><span>ID</span>
+                    <input class="hud-input" id="tpl-home-id" type="text" autocomplete="off" spellcheck="false"
+                        placeholder="auto RES_XXX" readonly>
+                </label>
+                <label class="modal-field"><span>Nazwa</span>
+                    <input class="hud-input" id="tpl-home-name" type="text" autocomplete="off" spellcheck="false"
+                        placeholder="auto z URL">
+                </label>
+                <label class="modal-field"><span>URL</span>
+                    <input class="hud-input" id="tpl-home-url" type="text" autocomplete="off" spellcheck="false"
+                        placeholder="https://…">
+                </label>
+                <label class="modal-field"><span>Type</span>
+                    <input class="hud-input" id="tpl-home-type" type="text" autocomplete="off" spellcheck="false"
+                        placeholder="WEB_SERVICE / EXTERNAL_REPO" value="WEB_SERVICE">
+                </label>
+                <label class="modal-field"><span>Status</span>
+                    <input class="hud-input" id="tpl-home-status" type="text" autocomplete="off" spellcheck="false"
+                        placeholder="ACTIVE" value="ACTIVE">
+                </label>
+            </div>
+
+            <div class="template-fields" data-template="auth" hidden>
+                <label class="modal-field"><span>Klucz</span>
+                    <input class="hud-input" id="tpl-auth-key" type="text" autocomplete="off" spellcheck="false"
+                        placeholder="np. linki_pat">
+                </label>
+                <label class="modal-field"><span>Wartość (zaszyfrowana)</span>
+                    <input class="hud-input" id="tpl-auth-value" type="text" autocomplete="off" spellcheck="false"
+                        placeholder="EF0X…">
+                </label>
+            </div>
+
+            <div class="template-fields" data-template="linki" hidden>
+                <label class="modal-field"><span>ID</span>
+                    <input class="hud-input" id="tpl-linki-id" type="text" autocomplete="off" spellcheck="false"
+                        placeholder="np. neumorphic-design">
+                </label>
+                <label class="modal-field"><span>Nazwa</span>
+                    <input class="hud-input" id="tpl-linki-name" type="text" autocomplete="off" spellcheck="false"
+                        placeholder="np. Neumorphic Design">
+                </label>
+                <label class="modal-field"><span>URL</span>
+                    <input class="hud-input" id="tpl-linki-url" type="text" autocomplete="off" spellcheck="false"
+                        placeholder="https://…">
+                </label>
+            </div>
+            <p class="modal-status" id="templateModalStatus">Szablon: home.json</p>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-action-btn" id="btn-cancel-template" type="button">
+                <i class="fas fa-ban"></i>
+                <span>Anuluj</span>
+            </button>
+            <button class="modal-action-btn modal-action-btn--primary" id="btn-confirm-template" type="button">
+                <i class="fas fa-plus"></i>
+                <span>Dodaj</span>
+            </button>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="confirmOverlay"></div>
     <div class="system-alert-modal" id="confirmModal" role="dialog" aria-modal="true"
         aria-labelledby="confirmModalTitle" aria-describedby="confirmModalMessage" data-alert-type="warning">

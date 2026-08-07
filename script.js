@@ -23,6 +23,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const accountOverlay = document.getElementById("accountModalOverlay");
   const accountModal = document.getElementById("accountModal");
+  const templateOverlay = document.getElementById("templateModalOverlay");
+  const templateModal = document.getElementById("templateModal");
+  const templateStatus = document.getElementById("templateModalStatus");
+  const tplAuthKey = document.getElementById("tpl-auth-key");
+  const tplAuthValue = document.getElementById("tpl-auth-value");
+  const tplLinkiId = document.getElementById("tpl-linki-id");
+  const tplLinkiName = document.getElementById("tpl-linki-name");
+  const tplLinkiUrl = document.getElementById("tpl-linki-url");
+  const tplHomeId = document.getElementById("tpl-home-id");
+  const tplHomeName = document.getElementById("tpl-home-name");
+  const tplHomeUrl = document.getElementById("tpl-home-url");
+  const tplHomeType = document.getElementById("tpl-home-type");
+  const tplHomeStatus = document.getElementById("tpl-home-status");
   const ghOwnerInput = document.getElementById("gh-owner");
   const ghRepoInput = document.getElementById("gh-repo");
   const ghPathInput = document.getElementById("gh-path");
@@ -146,6 +159,27 @@ document.addEventListener("DOMContentLoaded", () => {
       return u.toString();
     } catch (e) {
       return url;
+    }
+  }
+
+  function nameFromUrl(rawUrl) {
+    const value = String(rawUrl || "").trim();
+    if (!value) return " ";
+
+    try {
+      const parsed = new URL(
+        /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`,
+      );
+      const host = parsed.hostname.replace(/^www\./i, "");
+
+      if (/\.github\.io$/i.test(host)) {
+        const segment = parsed.pathname.split("/").filter(Boolean)[0];
+        if (segment) return decodeURIComponent(segment).toUpperCase();
+      }
+
+      return host.split(".")[0].toUpperCase() || " ";
+    } catch {
+      return " ";
     }
   }
 
@@ -325,6 +359,146 @@ document.addEventListener("DOMContentLoaded", () => {
   function closeAccountModal() {
     accountOverlay?.classList.remove("active");
     accountModal?.classList.remove("active");
+  }
+
+  function detectPreferredTemplate() {
+    const path = String(
+      currentFilePath || loadAccountSettings().path || "",
+    ).toLowerCase();
+    if (path.includes("auth")) return "auth";
+    if (path.includes("linki.json") || /(?:^|\/)linki\//.test(path)) {
+      if (path.includes("home")) return "home";
+      return "linki";
+    }
+    if (path.includes("home")) return "home";
+    return "home";
+  }
+
+  function getSelectedTemplate() {
+    return (
+      document.querySelector('input[name="item-template"]:checked')?.value ||
+      "home"
+    );
+  }
+
+  function nextHomeId(list = []) {
+    let maxNum = -1;
+    for (const item of list) {
+      const match = String(item?.id || "").match(/^RES_(\d+)$/i);
+      if (match) maxNum = Math.max(maxNum, Number(match[1]));
+    }
+    return `RES_${String(maxNum + 1).padStart(3, "0")}`;
+  }
+
+  function syncTemplateFields(template = getSelectedTemplate()) {
+    document.querySelectorAll(".template-fields").forEach((block) => {
+      block.hidden = block.dataset.template !== template;
+    });
+    if (templateStatus) {
+      templateStatus.textContent = `Szablon: ${template}.json`;
+    }
+  }
+
+  function focusTemplateField(template = getSelectedTemplate()) {
+    if (template === "auth") tplAuthKey?.focus();
+    else if (template === "linki") tplLinkiId?.focus();
+    else tplHomeUrl?.focus();
+  }
+
+  function resetTemplateForm(template = detectPreferredTemplate()) {
+    const radios = document.querySelectorAll('input[name="item-template"]');
+    radios.forEach((radio) => {
+      radio.checked = radio.value === template;
+    });
+    if (tplAuthKey) tplAuthKey.value = "";
+    if (tplAuthValue) tplAuthValue.value = "";
+    if (tplLinkiId) tplLinkiId.value = "";
+    if (tplLinkiName) tplLinkiName.value = "";
+    if (tplLinkiUrl) tplLinkiUrl.value = "";
+    if (tplHomeId) tplHomeId.value = nextHomeId();
+    if (tplHomeName) tplHomeName.value = "";
+    if (tplHomeUrl) tplHomeUrl.value = "";
+    if (tplHomeType) tplHomeType.value = "WEB_SERVICE";
+    if (tplHomeStatus) tplHomeStatus.value = "ACTIVE";
+    syncTemplateFields(template);
+  }
+
+  function openTemplateModal() {
+    let previewList = [];
+    try {
+      const parsed = JSON.parse(editorRef?.getValue?.() || "null");
+      previewList = getEditableList(parsed)?.list || [];
+    } catch {
+      previewList = [];
+    }
+
+    resetTemplateForm();
+    if (tplHomeId) tplHomeId.value = nextHomeId(previewList);
+
+    templateOverlay?.classList.add("active");
+    templateModal?.classList.add("active");
+    focusTemplateField();
+  }
+
+  function closeTemplateModal() {
+    templateOverlay?.classList.remove("active");
+    templateModal?.classList.remove("active");
+  }
+
+  function slugifyId(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
+  function buildTemplateItem(template = getSelectedTemplate(), list = []) {
+    if (template === "auth") {
+      const key = String(tplAuthKey?.value || "")
+        .trim()
+        .replace(/\s+/g, "_");
+      if (!key) {
+        throw new Error("Podaj nazwę klucza dla auth.json.");
+      }
+      return { [key]: String(tplAuthValue?.value || "").trim() };
+    }
+
+    if (template === "home") {
+      const url = String(tplHomeUrl?.value || "").trim();
+      const name =
+        String(tplHomeName?.value || "").trim() || nameFromUrl(url) || " ";
+      return {
+        id: String(tplHomeId?.value || "").trim() || nextHomeId(list),
+        name,
+        url: sanitizeUrl(url) || url || " ",
+        type: String(tplHomeType?.value || "").trim() || "WEB_SERVICE",
+        status: String(tplHomeStatus?.value || "").trim() || "ACTIVE",
+      };
+    }
+
+    const url = String(tplLinkiUrl?.value || "").trim();
+    const name = String(tplLinkiName?.value || "").trim() || nameFromUrl(url);
+    const id =
+      String(tplLinkiId?.value || "").trim() ||
+      slugifyId(name) ||
+      `node-${Date.now()}`;
+
+    return {
+      id,
+      name: name || " ",
+      url: sanitizeUrl(url) || url || " ",
+    };
+  }
+
+  function getEditableList(data) {
+    if (Array.isArray(data)) {
+      return { root: data, list: data, kind: "array" };
+    }
+    if (data && typeof data === "object" && Array.isArray(data.nodes)) {
+      return { root: data, list: data.nodes, kind: "nodes" };
+    }
+    return null;
   }
 
   function buildRawUrls(settings) {
@@ -857,6 +1031,19 @@ document.addEventListener("DOMContentLoaded", () => {
     .getElementById("accountModalClose")
     ?.addEventListener("click", closeAccountModal);
   accountOverlay?.addEventListener("click", closeAccountModal);
+  document
+    .getElementById("templateModalClose")
+    ?.addEventListener("click", closeTemplateModal);
+  document
+    .getElementById("btn-cancel-template")
+    ?.addEventListener("click", closeTemplateModal);
+  templateOverlay?.addEventListener("click", closeTemplateModal);
+  document.querySelectorAll('input[name="item-template"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      syncTemplateFields(radio.value);
+      focusTemplateField(radio.value);
+    });
+  });
   confirmOk?.addEventListener("click", () => closeDialog(true));
   confirmCancel?.addEventListener("click", () => closeDialog(false));
   confirmClose?.addEventListener("click", () => closeDialog(false));
@@ -866,6 +1053,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key !== "Escape") return;
     if (confirmModal?.classList.contains("active")) {
       closeDialog(false);
+      return;
+    }
+    if (templateModal?.classList.contains("active")) {
+      closeTemplateModal();
       return;
     }
     closeAccountModal();
@@ -1045,27 +1236,6 @@ document.addEventListener("DOMContentLoaded", () => {
         editor.setValue(JSON.stringify(obj, null, 2));
       }
 
-      function nameFromUrl(rawUrl) {
-        const value = String(rawUrl || "").trim();
-        if (!value) return " ";
-
-        try {
-          const parsed = new URL(
-            /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`,
-          );
-          const host = parsed.hostname.replace(/^www\./i, "");
-
-          if (/\.github\.io$/i.test(host)) {
-            const segment = parsed.pathname.split("/").filter(Boolean)[0];
-            if (segment) return decodeURIComponent(segment).toUpperCase();
-          }
-
-          return host.split(".")[0].toUpperCase() || " ";
-        } catch {
-          return " ";
-        }
-      }
-
       document
         .getElementById("btn-load")
         .addEventListener("click", async () => {
@@ -1112,34 +1282,52 @@ document.addEventListener("DOMContentLoaded", () => {
 
       document.getElementById("btn-add").addEventListener("click", () => {
         const data = getCurrentJson();
-        if (data && Array.isArray(data)) {
-          let maxNum = -1;
-          for (const item of data) {
-            const match = String(item?.id || "").match(/^RES_(\d+)$/i);
-            if (match) {
-              maxNum = Math.max(maxNum, Number(match[1]));
-            }
-          }
-
-          const nextId = `RES_${String(maxNum + 1).padStart(3, "0")}`;
-          const url = " ";
-
-          data.push({
-            id: nextId,
-            name: nameFromUrl(url),
-            url,
-            type: " ",
-            status: " ",
-          });
-          setJsonValue(data);
+        if (!data) return;
+        if (!getEditableList(data)) {
+          showNotice(
+            "Dodaj element",
+            "Otwórz plik tablicowy (auth.json) albo obiekt z nodes (linki.json).",
+            "warning",
+          );
+          return;
         }
+        openTemplateModal();
       });
+
+      document
+        .getElementById("btn-confirm-template")
+        ?.addEventListener("click", async () => {
+          try {
+            const data = getCurrentJson();
+            if (!data) return;
+
+            const editable = getEditableList(data);
+            if (!editable) {
+              throw new Error(
+                "Otwórz plik tablicowy (auth.json) albo obiekt z nodes (linki.json).",
+              );
+            }
+
+            const template = getSelectedTemplate();
+            const item = buildTemplateItem(template, editable.list);
+            editable.list.push(item);
+            setJsonValue(editable.root);
+            closeTemplateModal();
+            setSystemStatus({
+              message: `Dodano element (${template}.json)`,
+              messageState: "is-ok",
+            });
+          } catch (error) {
+            await showNotice("Dodaj element", error.message, "warning");
+          }
+        });
 
       document.getElementById("btn-remove").addEventListener("click", () => {
         const data = getCurrentJson();
-        if (data && Array.isArray(data) && data.length > 0) {
-          data.pop();
-          setJsonValue(data);
+        const editable = data ? getEditableList(data) : null;
+        if (editable && editable.list.length > 0) {
+          editable.list.pop();
+          setJsonValue(editable.root);
         }
       });
 
