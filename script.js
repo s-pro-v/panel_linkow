@@ -748,14 +748,18 @@ document.addEventListener("DOMContentLoaded", () => {
         : "JSON Editor";
     }
 
-    repoTreeEl?.querySelectorAll(".repo-tree-file.active").forEach((el) => {
-      el.classList.remove("active");
-    });
-    if (path) {
-      const active = repoTreeEl?.querySelector(
-        `.repo-tree-file[data-path="${CSS.escape(path)}"]`,
-      );
-      active?.classList.add("active");
+    if (repoTreeEl) {
+      repoTreeEl.querySelectorAll(".repo-tree-file.active").forEach((el) => {
+        el.classList.remove("active");
+        el.closest(".btn-bg")?.classList.remove("active");
+      });
+      if (path) {
+        const active = repoTreeEl.querySelector(
+          `.repo-tree-file[data-path="${CSS.escape(path)}"]`
+        );
+        active?.classList.add("active");
+        active?.closest(".btn-bg")?.classList.add("active");
+      }
     }
   }
 
@@ -788,46 +792,58 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderTreeNode(node, depth = 0) {
     const frag = document.createDocumentFragment();
     const folders = [...node.children.values()].sort((a, b) =>
-      a.name.localeCompare(b.name),
+      a.name.localeCompare(b.name)
     );
     const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name));
 
+    // Każdy FOLDER w kasecie .btn-bg
     for (const folder of folders) {
       const wrap = document.createElement("div");
       wrap.className = "repo-tree-node open";
-      wrap.style.setProperty("--depth", String(depth));
+
+      const btnBg = document.createElement("div");
+      btnBg.className = "btn-bg w-full";
 
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "repo-tree-folder";
-      btn.style.paddingLeft = `${0.55 + depth * 0.75}rem`;
+      btn.style.paddingLeft = `${0.5 + depth * 0.65}rem`;
       btn.innerHTML = `<i class="fas fa-folder"></i><i class="fas fa-folder-open"></i><span>${folder.name}</span>`;
-      btn.addEventListener("click", () => {
-        wrap.classList.toggle("open");
-      });
+      btn.addEventListener("click", () => wrap.classList.toggle("open"));
+
+      btnBg.appendChild(btn);
 
       const kids = document.createElement("div");
       kids.className = "repo-tree-children";
       kids.appendChild(renderTreeNode(folder, depth + 1));
 
-      wrap.appendChild(btn);
+      wrap.appendChild(btnBg);
       wrap.appendChild(kids);
       frag.appendChild(wrap);
     }
 
+    // Każdy PLIK w kasecie .btn-bg
     for (const file of files) {
+      const btnBg = document.createElement("div");
+      btnBg.className = "btn-bg w-full";
+
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "repo-tree-file";
       btn.dataset.path = file.path;
-      btn.style.paddingLeft = `${0.55 + depth * 0.75}rem`;
+      btn.style.paddingLeft = `${0.5 + depth * 0.65}rem`;
       btn.title = file.path;
-      btn.innerHTML = `<i-icon class="repo-tree-json-icon" name="swagger" color="#ffb74d" size="18"></i-icon><span>${file.name}</span>`;
-      if (file.path === currentFilePath) btn.classList.add("active");
-      btn.addEventListener("click", () => {
-        openRepoFile(file.path);
-      });
-      frag.appendChild(btn);
+      btn.innerHTML = `<i-icon class="repo-tree-json-icon" name="swagger" color="#f36c00" size="16"></i-icon><span>${file.name}</span>`;
+
+      if (file.path === currentFilePath) {
+        btn.classList.add("active");
+        btnBg.classList.add("active");
+      }
+
+      btn.addEventListener("click", () => openRepoFile(file.path));
+
+      btnBg.appendChild(btn);
+      frag.appendChild(btnBg);
     }
 
     return frag;
@@ -856,7 +872,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const token = cachedPatToken || (settings.token || "").trim();
       if (token) headers.Authorization = `Bearer ${token}`;
-    } catch (_) {}
+    } catch (_) { }
 
     if (repoTreeEl) {
       repoTreeEl.innerHTML =
@@ -945,7 +961,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       localStorage.setItem(KIT_THEME_KEY, theme === "light" ? "light" : "dark");
-    } catch (_) {}
+    } catch (_) { }
   }
 
   function applyTheme(theme) {
@@ -1408,7 +1424,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             markEditorClean(editor.getValue());
             setActiveFilePath(settings.path);
-            await fetchRepoTree(settings).catch(() => {});
+            await fetchRepoTree(settings).catch(() => { });
 
             setSystemStatus({
               send: "OK",
