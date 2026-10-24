@@ -863,25 +863,53 @@ document.addEventListener("DOMContentLoaded", () => {
   async function fetchRepoTree(settings = loadAccountSettings()) {
     const owner = settings.owner || defaults.owner;
     const repo = settings.repo || defaults.repo;
-    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/main?recursive=1&t=${Date.now()}`;
-    const headers = {
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    };
-
-    try {
-      const token = cachedPatToken || (settings.token || "").trim();
-      if (token) headers.Authorization = `Bearer ${token}`;
-    } catch (_) { }
+    const branches = ["main", "master"];
 
     if (repoTreeEl) {
       repoTreeEl.innerHTML =
         '<div class="repo-tree-empty">Ładowanie drzewa…</div>';
     }
 
-    const res = await fetch(apiUrl, { ...NO_CACHE_INIT, headers });
-    if (!res.ok) {
-      throw new Error(`Nie udało się pobrać drzewa (${res.status})`);
+    const token = cachedPatToken || (settings.token || "").trim();
+
+    async function tryFetchTree(branch, useToken = true) {
+      const apiUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1&t=${Date.now()}`;
+      const headers = {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      };
+      if (useToken && token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      return fetch(apiUrl, { ...NO_CACHE_INIT, headers });
+    }
+
+    let res = null;
+    let lastStatus = 0;
+
+    for (const branch of branches) {
+      // 1. Próba z tokenem (jeśli istnieje)
+      if (token) {
+        res = await tryFetchTree(branch, true);
+        if (res.status === 401) {
+          console.warn("Drzewo repo: token zwrócił 401. Próba bez autoryzacji (public repo)...");
+          res = await tryFetchTree(branch, false);
+        }
+      } else {
+        res = await tryFetchTree(branch, false);
+      }
+
+      if (res && res.ok) {
+        break;
+      }
+      if (res) lastStatus = res.status;
+    }
+
+    if (!res || !res.ok) {
+      if (repoTreeEl) {
+        repoTreeEl.innerHTML = `<div class="repo-tree-error">Nie udało się załadować drzewa (Status: ${lastStatus})</div>`;
+      }
+      throw new Error(`Nie udało się pobrać drzewa (${lastStatus})`);
     }
 
     const data = await res.json();
@@ -1166,6 +1194,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "success",
       );
       closeAccountModal();
+      fetchRepoTree(settings).catch(() => {});
     });
 
   // Enter na haśle XOR = odszyfruj
@@ -1451,4 +1480,21 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
   }
+
+  // Obsługa przycisku odświeżania drzewa
+  refreshTreeButton?.addEventListener("click", async () => {
+    try {
+      refreshTreeButton.classList.add("fa-spin");
+      await fetchRepoTree();
+    } catch (e) {
+      console.warn("Błąd odświeżania drzewa:", e);
+    } finally {
+      refreshTreeButton.classList.remove("fa-spin");
+    }
+  });
+
+  // Wczytanie drzewa przy uruchomieniu aplikacji
+  fetchRepoTree().catch((err) => {
+    console.warn("Wstępne wczytywanie drzewa repo nie powiodło się:", err);
+  });
 });
