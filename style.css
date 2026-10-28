@@ -146,8 +146,8 @@
     --oi-grid-color: var(--oi-bg-36);
 
     /* Tło i siatka dla motywu ciemnego */
-    --bg-overlay-1: rgba(10, 12, 16, 0.45);
-    --bg-overlay-2: rgba(10, 12, 16, 0.65);
+    --bg-overlay-1: #2e2e2ea8;
+    --bg-overlay-2: #2e2e2ec9;
     --hud-grid-minor: rgba(255, 255, 255, 0.07);
     --hud-grid-major: rgba(243, 108, 0, 0.08);
 }
@@ -186,7 +186,7 @@ body::before {
     inset: 0;
     z-index: -2;
     background-image:
-        linear-gradient(var(--bg-overlay-1), var(--bg-overlay-2)),
+        linear-gradient(var(--bg-overlay-2), var(--bg-overlay-1)),
         url('assets/images/bg.jpg');
     background-size: cover;
     background-position: center;
@@ -410,6 +410,10 @@ body::after {
     font-family: var(--oi-font-mono);
     font-size: 0.78rem;
     color: var(--oi-text-muted);
+}
+
+.repo-tree-error {
+    color: var(--oi-danger-color);
 }
 
 .repo-tree-folder,
@@ -985,6 +989,33 @@ body::after {
     display: none;
 }
 
+#dynamicFieldsContainer {
+    max-height: 48vh;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+}
+
+.dynamic-field-row .modal-field-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.field-del-btn {
+    background: transparent;
+    border: none;
+    color: var(--oi-text-muted);
+    cursor: pointer;
+    font-size: 0.72rem;
+    padding: 0 0.35rem;
+    transition: color 0.15s ease;
+}
+
+.field-del-btn:hover {
+    color: var(--oi-danger-color);
+}
+
 /* System Alert / Confirm Window */
 .system-alert-modal {
     position: fixed;
@@ -1032,9 +1063,9 @@ body::after {
 
 .system-alert-footer {
     display: flex;
-    gap: 4px;
-    padding: 4px;
-    box-shadow: var(--shadow-inset);
+    gap: 0.125rem;
+    padding: 0.125rem;
+    box-shadow: var(--shadow-drop);
     border-top: 1px solid var(--oi-border-color);
     background: var(--oi-card-bg);
 }

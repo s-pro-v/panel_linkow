@@ -235,76 +235,63 @@
             <div class="template-grid" role="radiogroup">
                 <div class="btn-bg">
                     <label class="template-card">
-                        <input type="radio" name="item-template" value="home" checked>
+                        <input type="radio" name="item-template" value="auto" checked>
                         <span class="template-card__body">
-                            <span class="template-card__title"><i class="fas fa-house"></i> home.json</span>
-                            <span class="template-card__desc">{ id, name, url, type, status }</span>
+                            <span class="template-card__title"><i class="fas fa-wand-magic-sparkles"></i> Dopasuj</span>
+                            <span class="template-card__desc" id="tplAutoDesc">Wykryte pola pliku</span>
                         </span>
                     </label>
                 </div>
                 <div class="btn-bg">
                     <label class="template-card">
-                        <input type="radio" name="item-template" value="auth">
+                        <input type="radio" name="item-template" value="kv">
                         <span class="template-card__body">
-                            <span class="template-card__title"><i class="fas fa-key"></i> auth.json</span>
+                            <span class="template-card__title"><i class="fas fa-key"></i> Klucz/Wartość</span>
                             <span class="template-card__desc">{ "klucz": "wartość" }</span>
                         </span>
                     </label>
                 </div>
                 <div class="btn-bg">
                     <label class="template-card">
-                        <input type="radio" name="item-template" value="linki">
+                        <input type="radio" name="item-template" value="raw">
                         <span class="template-card__body">
-                            <span class="template-card__title"><i class="fas fa-link"></i> linki.json</span>
-                            <span class="template-card__desc">{ id, name, url }</span>
+                            <span class="template-card__title"><i class="fas fa-code"></i> Własny JSON</span>
+                            <span class="template-card__desc">Wklej fragment JSON</span>
                         </span>
                     </label>
                 </div>
             </div>
 
-            <div class="template-fields" data-template="home">
-                <label class="modal-field"><span>ID</span>
-                    <div class="btn-bg w-full"><input class="hud-input" id="tpl-home-id" type="text" readonly></div>
+            <!-- Dynamiczny kontener na pola schematu pliku -->
+            <div id="dynamicFieldsContainer" class="template-fields"></div>
+
+            <!-- Pola dla trybu Klucz / Wartość -->
+            <div class="template-fields" id="kvFieldsContainer" hidden>
+                <label class="modal-field"><span>Klucz</span>
+                    <div class="btn-bg w-full"><input class="hud-input" id="tpl-kv-key" type="text" placeholder="np. nazwa_klucza"></div>
                 </label>
-                <label class="modal-field"><span>Nazwa</span>
-                    <div class="btn-bg w-full"><input class="hud-input" id="tpl-home-name" type="text"></div>
+                <label class="modal-field"><span>Wartość</span>
+                    <div class="btn-bg w-full"><input class="hud-input" id="tpl-kv-val" type="text" placeholder="wartość (tekst lub JSON)"></div>
                 </label>
-                <label class="modal-field"><span>URL</span>
-                    <div class="btn-bg w-full"><input class="hud-input" id="tpl-home-url" type="text"></div>
-                </label>
-                <label class="modal-field"><span>Type</span>
-                    <div class="btn-bg w-full"><input class="hud-input" id="tpl-home-type" type="text"
-                            value="WEB_SERVICE"></div>
-                </label>
-                <label class="modal-field"><span>Status</span>
-                    <div class="btn-bg w-full"><input class="hud-input" id="tpl-home-status" type="text" value="ACTIVE">
+            </div>
+
+            <!-- Pola dla trybu Własny JSON -->
+            <div class="template-fields" id="rawFieldsContainer" hidden>
+                <label class="modal-field"><span>Fragment JSON</span>
+                    <div class="btn-bg w-full">
+                        <textarea class="hud-input" id="tpl-raw-json" rows="6" placeholder='{ "nazwa": "wartość" }' style="font-family: var(--oi-font-mono); resize: vertical; min-height: 110px;"></textarea>
                     </div>
                 </label>
             </div>
 
-            <div class="template-fields" data-template="auth" hidden>
-                <label class="modal-field"><span>Klucz</span>
-                    <div class="btn-bg w-full"><input class="hud-input" id="tpl-auth-key" type="text"></div>
-                </label>
-                <label class="modal-field"><span>Wartość</span>
-                    <div class="btn-bg w-full"><input class="hud-input" id="tpl-auth-value" type="text"></div>
-                </label>
-            </div>
-
-            <div class="template-fields" data-template="linki" hidden>
-                <label class="modal-field"><span>ID</span>
-                    <div class="btn-bg w-full"><input class="hud-input" id="tpl-linki-id" type="text"></div>
-                </label>
-                <label class="modal-field"><span>Nazwa</span>
-                    <div class="btn-bg w-full"><input class="hud-input" id="tpl-linki-name" type="text"></div>
-                </label>
-                <label class="modal-field"><span>URL</span>
-                    <div class="btn-bg w-full"><input class="hud-input" id="tpl-linki-url" type="text"></div>
-                </label>
-            </div>
-            <p class="modal-status" id="templateModalStatus">Szablon: home.json</p>
+            <p class="modal-status" id="templateModalStatus">Szablon: Dopasuj do pliku</p>
         </div>
         <div class="modal-footer">
+            <div class="btn-bg" id="btn-add-field-wrapper">
+                <button class="modal-action-btn" id="btn-add-custom-field" type="button" title="Dodaj kolejne pole do formularza">
+                    <i class="fas fa-plus"></i> Dodaj pole
+                </button>
+            </div>
             <div class="btn-bg flex-1">
                 <button class="modal-action-btn" id="btn-cancel-template" type="button"><i class="fas fa-ban"></i>
                     Anuluj</button>

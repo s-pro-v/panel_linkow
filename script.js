@@ -15,27 +15,44 @@ document.addEventListener("DOMContentLoaded", () => {
   let cachedPatToken = null;
   let tokenSource = null;
   let encryptedPat = null;
+  let rawAuthData = null;
   let editorRef = null;
   let currentFilePath = null;
   let editorBaseline = "";
   let repoTreePaths = [];
   let confirmResolver = null;
 
+  const FALLBACK_REPO_FILES = [
+    "card.json",
+    "dev/auth.json",
+    "grafik.json",
+    "html.json",
+    "linki/home.json",
+    "linki/linki.json",
+    "main.json",
+    "mobile-grafik.json",
+    "mobile-w.json",
+    "norma.json",
+    "note_hub.json",
+    "notes.json",
+    "opisy.json",
+    "pass.json",
+    "terminal.json",
+    "tools.json",
+    "w5g.json",
+  ];
+
   const accountOverlay = document.getElementById("accountModalOverlay");
   const accountModal = document.getElementById("accountModal");
   const templateOverlay = document.getElementById("templateModalOverlay");
   const templateModal = document.getElementById("templateModal");
   const templateStatus = document.getElementById("templateModalStatus");
-  const tplAuthKey = document.getElementById("tpl-auth-key");
-  const tplAuthValue = document.getElementById("tpl-auth-value");
-  const tplLinkiId = document.getElementById("tpl-linki-id");
-  const tplLinkiName = document.getElementById("tpl-linki-name");
-  const tplLinkiUrl = document.getElementById("tpl-linki-url");
-  const tplHomeId = document.getElementById("tpl-home-id");
-  const tplHomeName = document.getElementById("tpl-home-name");
-  const tplHomeUrl = document.getElementById("tpl-home-url");
-  const tplHomeType = document.getElementById("tpl-home-type");
-  const tplHomeStatus = document.getElementById("tpl-home-status");
+  const dynamicFieldsContainer = document.getElementById("dynamicFieldsContainer");
+  const kvFieldsContainer = document.getElementById("kvFieldsContainer");
+  const rawFieldsContainer = document.getElementById("rawFieldsContainer");
+  const tplKvKey = document.getElementById("tpl-kv-key");
+  const tplKvVal = document.getElementById("tpl-kv-val");
+  const tplRawJson = document.getElementById("tpl-raw-json");
   const ghOwnerInput = document.getElementById("gh-owner");
   const ghRepoInput = document.getElementById("gh-repo");
   const ghPathInput = document.getElementById("gh-path");
@@ -340,11 +357,22 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       await fetchEncryptedPat();
       setAuthFetched(true);
-      setSystemStatus({
-        token: "WAIT",
-        tokenState: "is-warn",
-        message: "auth.json pobrany — wpisz hasło XOR",
-      });
+      const settings = loadAccountSettings();
+      const xorKey = String(settings.xorKey || "").trim() || getSecretKey();
+      try {
+        const token = decryptPat({ ...settings, xorKey });
+        settings.token = token;
+        if (!settings.xorKey) settings.xorKey = xorKey;
+        saveAccountSettings(settings);
+        if (ghTokenInput) ghTokenInput.value = token;
+        if (ghXorKeyInput) ghXorKeyInput.value = xorKey;
+      } catch (decErr) {
+        setSystemStatus({
+          token: "WAIT",
+          tokenState: "is-warn",
+          message: "auth.json pobrany — wpisz hasło XOR",
+        });
+      }
       if (accountModal?.classList.contains("active")) ghXorKeyInput?.focus();
     } catch (error) {
       setAuthFetched(false);
@@ -361,26 +389,6 @@ document.addEventListener("DOMContentLoaded", () => {
     accountModal?.classList.remove("active");
   }
 
-  function detectPreferredTemplate() {
-    const path = String(
-      currentFilePath || loadAccountSettings().path || "",
-    ).toLowerCase();
-    if (path.includes("auth")) return "auth";
-    if (path.includes("linki.json") || /(?:^|\/)linki\//.test(path)) {
-      if (path.includes("home")) return "home";
-      return "linki";
-    }
-    if (path.includes("home")) return "home";
-    return "home";
-  }
-
-  function getSelectedTemplate() {
-    return (
-      document.querySelector('input[name="item-template"]:checked')?.value ||
-      "home"
-    );
-  }
-
   function nextHomeId(list = []) {
     let maxNum = -1;
     for (const item of list) {
@@ -390,54 +398,244 @@ document.addEventListener("DOMContentLoaded", () => {
     return `RES_${String(maxNum + 1).padStart(3, "0")}`;
   }
 
-  function syncTemplateFields(template = getSelectedTemplate()) {
-    document.querySelectorAll(".template-fields").forEach((block) => {
-      block.hidden = block.dataset.template !== template;
+  function detectSchemaKeys(list) {
+    if (!Array.isArray(list) || list.length === 0) return [];
+    const keySet = new Set();
+    for (let i = 0; i < Math.min(list.length, 30); i++) {
+      const item = list[i];
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        Object.keys(item).forEach((k) => keySet.add(k));
+      }
+    }
+    return Array.from(keySet);
+  }
+
+  function getEditableTarget(data) {
+    if (!data || typeof data !== "object") return null;
+
+    if (Array.isArray(data)) {
+      return {
+        root: data,
+        list: data,
+        kind: "array",
+        schemaKeys: detectSchemaKeys(data),
+      };
+    }
+
+    const candidateArrayProps = [
+      "nodes",
+      "workers",
+      "items",
+      "list",
+      "links",
+      "elements",
+    ];
+    for (const prop of candidateArrayProps) {
+      if (Array.isArray(data[prop])) {
+        return {
+          root: data,
+          list: data[prop],
+          kind: "nested_array",
+          propName: prop,
+          schemaKeys: detectSchemaKeys(data[prop]),
+        };
+      }
+    }
+
+    for (const [key, val] of Object.entries(data)) {
+      if (Array.isArray(val)) {
+        return {
+          root: data,
+          list: val,
+          kind: "nested_array",
+          propName: key,
+          schemaKeys: detectSchemaKeys(val),
+        };
+      }
+    }
+
+    return {
+      root: data,
+      kind: "object",
+      keys: Object.keys(data),
+    };
+  }
+
+  function addDynamicFieldRow(key, target, defaultValue = "") {
+    if (!dynamicFieldsContainer) return;
+
+    const row = document.createElement("div");
+    row.className = "modal-field dynamic-field-row";
+
+    const header = document.createElement("div");
+    header.className = "modal-field-header";
+
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = key;
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "field-del-btn";
+    delBtn.title = "Usuń to pole z formularza";
+    delBtn.innerHTML = '<i class="fas fa-times"></i>';
+    delBtn.addEventListener("click", () => row.remove());
+
+    header.appendChild(labelSpan);
+    header.appendChild(delBtn);
+
+    const btnBg = document.createElement("div");
+    btnBg.className = "btn-bg w-full";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "hud-input";
+    input.dataset.key = key;
+    input.placeholder = `opcjonalne: wpisz ${key}`;
+
+    if (defaultValue) {
+      input.value = defaultValue;
+    } else if (key === "id" && target && (currentFilePath || "").includes("home")) {
+      input.value = nextHomeId(target.list);
+    } else if (key === "date") {
+      input.placeholder = "np. " + new Date().toISOString().slice(0, 10);
+    } else if (key === "url") {
+      input.placeholder = "https://...";
+    }
+
+    btnBg.appendChild(input);
+    row.appendChild(header);
+    row.appendChild(btnBg);
+    dynamicFieldsContainer.appendChild(row);
+  }
+
+  function renderDynamicForm(target) {
+    if (!dynamicFieldsContainer) return;
+    dynamicFieldsContainer.innerHTML = "";
+
+    const autoDesc = document.getElementById("tplAutoDesc");
+    const fileName = currentFilePath
+      ? currentFilePath.split("/").pop()
+      : "plik";
+
+    if (target.kind === "object") {
+      if (autoDesc) autoDesc.textContent = `Właściwość obiektu (${fileName})`;
+      return;
+    }
+
+    let keys = target.schemaKeys || [];
+    if (keys.length === 0) {
+      if (fileName.includes("home")) {
+        keys = ["id", "name", "url", "type", "status"];
+      } else if (fileName.includes("linki")) {
+        keys = ["id", "name", "url"];
+      } else if (fileName.includes("card")) {
+        keys = ["url", "title", "description"];
+      } else if (fileName.includes("notes") || fileName.includes("terminal")) {
+        keys = ["name", "content", "date", "mode"];
+      } else {
+        keys = ["id", "name", "value"];
+      }
+    }
+
+    if (autoDesc) {
+      autoDesc.textContent = `${keys.length} wykrytych pól (${fileName})`;
+    }
+
+    keys.forEach((key) => {
+      addDynamicFieldRow(key, target);
     });
+
     if (templateStatus) {
-      templateStatus.textContent = `Szablon: ${template}.json`;
+      templateStatus.textContent = `Plik: ${currentFilePath || fileName} (${target.kind === "nested_array" ? `właściwość "${target.propName}"` : "tablica główna"})`;
     }
   }
 
-  function focusTemplateField(template = getSelectedTemplate()) {
-    if (template === "auth") tplAuthKey?.focus();
-    else if (template === "linki") tplLinkiId?.focus();
-    else tplHomeUrl?.focus();
-  }
+  function syncTemplateFields(selected) {
+    const mode =
+      selected ||
+      document.querySelector('input[name="item-template"]:checked')?.value ||
+      "auto";
 
-  function resetTemplateForm(template = detectPreferredTemplate()) {
-    const radios = document.querySelectorAll('input[name="item-template"]');
-    radios.forEach((radio) => {
-      radio.checked = radio.value === template;
-    });
-    if (tplAuthKey) tplAuthKey.value = "";
-    if (tplAuthValue) tplAuthValue.value = "";
-    if (tplLinkiId) tplLinkiId.value = "";
-    if (tplLinkiName) tplLinkiName.value = "";
-    if (tplLinkiUrl) tplLinkiUrl.value = "";
-    if (tplHomeId) tplHomeId.value = nextHomeId();
-    if (tplHomeName) tplHomeName.value = "";
-    if (tplHomeUrl) tplHomeUrl.value = "";
-    if (tplHomeType) tplHomeType.value = "WEB_SERVICE";
-    if (tplHomeStatus) tplHomeStatus.value = "ACTIVE";
-    syncTemplateFields(template);
+    if (dynamicFieldsContainer) dynamicFieldsContainer.hidden = mode !== "auto";
+    if (kvFieldsContainer) kvFieldsContainer.hidden = mode !== "kv";
+    if (rawFieldsContainer) rawFieldsContainer.hidden = mode !== "raw";
+
+    const addWrapper = document.getElementById("btn-add-field-wrapper");
+    if (addWrapper) addWrapper.hidden = mode !== "auto";
+
+    if (templateStatus) {
+      if (mode === "auto") {
+        templateStatus.textContent = `Tryb: Dopasuj do pliku (${currentFilePath || "bieżący plik"})`;
+      } else if (mode === "kv") {
+        templateStatus.textContent = "Tryb: Klucz / Wartość";
+      } else if (mode === "raw") {
+        templateStatus.textContent = "Tryb: Własny JSON";
+      }
+    }
   }
 
   function openTemplateModal() {
-    let previewList = [];
+    let data;
     try {
-      const parsed = JSON.parse(editorRef?.getValue?.() || "null");
-      previewList = getEditableList(parsed)?.list || [];
+      data = JSON.parse(editorRef?.getValue?.() || "null");
     } catch {
-      previewList = [];
+      showNotice(
+        "Błąd JSON",
+        "Popraw błędy składni JSON przed dodaniem elementu.",
+        "critical",
+      );
+      return;
     }
 
-    resetTemplateForm();
-    if (tplHomeId) tplHomeId.value = nextHomeId(previewList);
+    const target = getEditableTarget(data);
+    if (!target) {
+      showNotice(
+        "Dodaj element",
+        "Dokument musi być poprawną tablicą lub obiektem JSON.",
+        "warning",
+      );
+      return;
+    }
+
+    const fileName = currentFilePath
+      ? currentFilePath.split("/").pop()
+      : "plik";
+    const modalTitle = document.getElementById("templateModalTitle");
+    if (modalTitle) {
+      modalTitle.innerHTML = `<i class="fas fa-plus text-highlight"></i> Dodaj do ${fileName}`;
+    }
+
+    const autoRadio = document.querySelector(
+      'input[name="item-template"][value="auto"]',
+    );
+    const kvRadio = document.querySelector(
+      'input[name="item-template"][value="kv"]',
+    );
+
+    if (target.kind === "object") {
+      if (kvRadio) kvRadio.checked = true;
+      syncTemplateFields("kv");
+      if (tplKvKey) tplKvKey.value = "";
+      if (tplKvVal) tplKvVal.value = "";
+    } else {
+      if (autoRadio) autoRadio.checked = true;
+      renderDynamicForm(target);
+      syncTemplateFields("auto");
+    }
+
+    if (tplRawJson) tplRawJson.value = "";
 
     templateOverlay?.classList.add("active");
     templateModal?.classList.add("active");
-    focusTemplateField();
+
+    setTimeout(() => {
+      if (target.kind === "object") {
+        tplKvKey?.focus();
+      } else {
+        const first = dynamicFieldsContainer?.querySelector("input");
+        first?.focus();
+      }
+    }, 50);
   }
 
   function closeTemplateModal() {
@@ -445,60 +643,102 @@ document.addEventListener("DOMContentLoaded", () => {
     templateModal?.classList.remove("active");
   }
 
-  function slugifyId(value) {
-    return String(value || "")
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-  }
+  function collectModalItem(target) {
+    const mode =
+      document.querySelector('input[name="item-template"]:checked')?.value ||
+      "auto";
 
-  function buildTemplateItem(template = getSelectedTemplate(), list = []) {
-    if (template === "auth") {
-      const key = String(tplAuthKey?.value || "")
-        .trim()
-        .replace(/\s+/g, "_");
-      if (!key) {
-        throw new Error("Podaj nazwę klucza dla auth.json.");
+    if (mode === "raw") {
+      const rawText = tplRawJson?.value.trim();
+      if (!rawText) throw new Error("Wklej lub wpisz fragment JSON.");
+      try {
+        return JSON.parse(rawText);
+      } catch (e) {
+        throw new Error("Błąd składni JSON: " + e.message);
       }
-      return { [key]: String(tplAuthValue?.value || "").trim() };
     }
 
-    if (template === "home") {
-      const url = String(tplHomeUrl?.value || "").trim();
-      const name =
-        String(tplHomeName?.value || "").trim() || nameFromUrl(url) || " ";
-      return {
-        id: String(tplHomeId?.value || "").trim() || nextHomeId(list),
-        name,
-        url: sanitizeUrl(url) || url || " ",
-        type: String(tplHomeType?.value || "").trim() || "WEB_SERVICE",
-        status: String(tplHomeStatus?.value || "").trim() || "ACTIVE",
-      };
+    if (mode === "kv") {
+      const key = tplKvKey?.value.trim();
+      const val = tplKvVal?.value.trim();
+      if (!key) throw new Error("Podaj nazwę klucza.");
+      if (val === "") throw new Error("Podaj wartość klucza.");
+      let parsedVal = val;
+      if (val === "true") parsedVal = true;
+      else if (val === "false") parsedVal = false;
+      else if (val === "null") parsedVal = null;
+      else if (
+        (val.startsWith("{") && val.endsWith("}")) ||
+        (val.startsWith("[") && val.endsWith("]"))
+      ) {
+        try {
+          parsedVal = JSON.parse(val);
+        } catch (e) {}
+      }
+      return { [key]: parsedVal };
     }
 
-    const url = String(tplLinkiUrl?.value || "").trim();
-    const name = String(tplLinkiName?.value || "").trim() || nameFromUrl(url);
-    const id =
-      String(tplLinkiId?.value || "").trim() ||
-      slugifyId(name) ||
-      `node-${Date.now()}`;
-
-    return {
-      id,
-      name: name || " ",
-      url: sanitizeUrl(url) || url || " ",
-    };
-  }
-
-  function getEditableList(data) {
-    if (Array.isArray(data)) {
-      return { root: data, list: data, kind: "array" };
+    // Tryb auto (ze schematu pliku):
+    if (target.kind === "object") {
+      const key = tplKvKey?.value.trim();
+      const val = tplKvVal?.value.trim();
+      if (!key) throw new Error("Podaj nazwę klucza.");
+      let parsedVal = val;
+      if (val === "true") parsedVal = true;
+      else if (val === "false") parsedVal = false;
+      else if (val === "null") parsedVal = null;
+      else if (
+        (val.startsWith("{") && val.endsWith("}")) ||
+        (val.startsWith("[") && val.endsWith("]"))
+      ) {
+        try {
+          parsedVal = JSON.parse(val);
+        } catch (e) {}
+      }
+      return { [key]: parsedVal };
     }
-    if (data && typeof data === "object" && Array.isArray(data.nodes)) {
-      return { root: data, list: data.nodes, kind: "nodes" };
+
+    // Dla tablic: "nie dodawaj tego czego niema" — TYLKO niepuste pola!
+    const inputs =
+      dynamicFieldsContainer?.querySelectorAll(
+        "input[data-key], textarea[data-key]",
+      ) || [];
+    const item = {};
+    let filledCount = 0;
+
+    inputs.forEach((input) => {
+      const key = input.dataset.key;
+      const rawVal = input.value.trim();
+      if (rawVal !== "") {
+        let parsedVal = rawVal;
+        if (key === "url") {
+          parsedVal = sanitizeUrl(rawVal) || rawVal;
+        } else if (rawVal === "true") {
+          parsedVal = true;
+        } else if (rawVal === "false") {
+          parsedVal = false;
+        } else if (rawVal === "null") {
+          parsedVal = null;
+        } else if (
+          (rawVal.startsWith("{") && rawVal.endsWith("}")) ||
+          (rawVal.startsWith("[") && rawVal.endsWith("]"))
+        ) {
+          try {
+            parsedVal = JSON.parse(rawVal);
+          } catch (e) {}
+        }
+        item[key] = parsedVal;
+        filledCount++;
+      }
+    });
+
+    if (filledCount === 0) {
+      throw new Error(
+        "Wypełnij przynajmniej jedno pole. Puste pola nie są dodawane.",
+      );
     }
-    return null;
+
+    return item;
   }
 
   function buildRawUrls(settings) {
@@ -545,6 +785,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function fetchJsonWithFallback(settings) {
+    const owner = settings.owner || defaults.owner;
+    const repo = settings.repo || defaults.repo;
+    const path = String(settings.path || defaults.path).replace(/^\/+/, "");
+
     // Z tokenem czytamy przez API — omija cache CDN i zawsze zwraca HEAD gałęzi
     if (cachedPatToken || (settings.token || "").trim()) {
       try {
@@ -560,19 +804,35 @@ document.addEventListener("DOMContentLoaded", () => {
     const { main, master } = buildRawUrls(settings);
     console.log(`Próba pobrania danych z: ${main}`);
 
-    const mainRes = await fetch(main, NO_CACHE_INIT);
-    if (mainRes.ok) return mainRes.json();
+    try {
+      const mainRes = await fetch(main, NO_CACHE_INIT);
+      if (mainRes.ok) return await mainRes.json();
+    } catch (e) {
+      console.warn(`Błąd sieci z main: ${e.message}`);
+    }
 
     console.warn(
-      `Błąd pobierania z main (${mainRes.status}). Próba z gałęzi master: ${master}`,
+      `Błąd pobierania z main. Próba z gałęzi master: ${master}`,
     );
-    const masterRes = await fetch(master, NO_CACHE_INIT);
-    if (!masterRes.ok) {
-      throw new Error(
-        `Nie znaleziono pliku w gałęziach main ani master (Status: ${masterRes.status})`,
-      );
+    try {
+      const masterRes = await fetch(master, NO_CACHE_INIT);
+      if (masterRes.ok) return await masterRes.json();
+    } catch (e) {
+      console.warn(`Błąd sieci z master: ${e.message}`);
     }
-    return masterRes.json();
+
+    // Fallback: jsDelivr CDN
+    try {
+      const cdnUrl = `https://cdn.jsdelivr.net/gh/${owner}/${repo}@main/${path}?t=${Date.now()}`;
+      const cdnRes = await fetch(cdnUrl, NO_CACHE_INIT);
+      if (cdnRes.ok) return await cdnRes.json();
+    } catch (e) {
+      console.warn(`Błąd sieci z jsDelivr CDN: ${e.message}`);
+    }
+
+    throw new Error(
+      `Nie znaleziono pliku ${path} w gałęziach main ani master.`,
+    );
   }
 
   function setAuthFetched(fetched) {
@@ -590,7 +850,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (decryptButton) decryptButton.disabled = !fetched;
   }
 
-  // Krok 1: pobranie zaszyfrowanego linki_pat
+  // Krok 1: pobranie zaszyfrowanego tokena z auth.json
   async function fetchEncryptedPat() {
     setSystemStatus({
       token: "...",
@@ -604,43 +864,95 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const data = await res.json();
+    rawAuthData = data;
     let patEncrypted = null;
+    const preferredKeys = [
+      "json_up",
+      "note_manager",
+      "terminal_pat",
+      "notech_pat",
+      "mobile_pat",
+      "cyber_data",
+      "linki_pat",
+      "sys_pat",
+    ];
+
     if (Array.isArray(data)) {
-      const found = data.find((item) => item && item.linki_pat);
-      if (found) patEncrypted = found.linki_pat;
-    } else if (data?.linki_pat) {
-      patEncrypted = data.linki_pat;
+      for (const key of preferredKeys) {
+        const found = data.find((item) => item && item[key]);
+        if (found) {
+          patEncrypted = found[key];
+          break;
+        }
+      }
+    } else if (data && typeof data === "object") {
+      for (const key of preferredKeys) {
+        if (data[key]) {
+          patEncrypted = data[key];
+          break;
+        }
+      }
     }
 
     if (!patEncrypted) {
-      throw new Error("Brak klucza linki_pat w auth.json");
+      throw new Error("Brak klucza tokena w auth.json");
     }
 
     encryptedPat = patEncrypted;
     return patEncrypted;
   }
 
-  // Krok 2: odszyfrowanie pobranego linki_pat hasłem
+  // Krok 2: odszyfrowanie pobranego tokena hasłem
   function decryptPat(settings) {
-    if (!encryptedPat) {
+    if (!encryptedPat && !rawAuthData) {
       throw new Error("Najpierw pobierz auth.json.");
     }
 
-    const key = String(settings.xorKey || "").trim();
-    if (!key) {
-      throw new Error("Wpisz hasło XOR.");
+    const key = String(settings.xorKey || "").trim() || getSecretKey();
+    const candidateKeys = [
+      "json_up",
+      "note_manager",
+      "terminal_pat",
+      "notech_pat",
+      "mobile_pat",
+      "cyber_data",
+      "linki_pat",
+      "sys_pat",
+    ];
+
+    let decoded = null;
+    let usedSource = "auth.json";
+
+    if (rawAuthData && typeof rawAuthData === "object") {
+      for (const cand of candidateKeys) {
+        const enc = Array.isArray(rawAuthData)
+          ? rawAuthData.find((it) => it && it[cand])?.[cand]
+          : rawAuthData[cand];
+        if (enc) {
+          const test = xorDecode(enc, key);
+          if (isValidGithubToken(test)) {
+            decoded = test;
+            usedSource = cand;
+            encryptedPat = enc;
+            break;
+          }
+        }
+      }
     }
 
-    const decoded = xorDecode(encryptedPat, key);
+    if (!decoded && encryptedPat) {
+      decoded = xorDecode(encryptedPat, key);
+    }
+
     if (!decoded) {
-      throw new Error("Nie udało się odszyfrować linki_pat.");
+      throw new Error("Nie udało się odszyfrować tokena.");
     }
     if (!isValidGithubToken(decoded)) {
       throw new Error("Błędne hasło — wynik nie jest tokenem GitHub.");
     }
 
     cachedPatToken = decoded;
-    updateTokenStatus(true, "linki_pat");
+    updateTokenStatus(true, usedSource);
     return decoded;
   }
 
@@ -757,8 +1069,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const active = repoTreeEl.querySelector(
           `.repo-tree-file[data-path="${CSS.escape(path)}"]`
         );
-        active?.classList.add("active");
-        active?.closest(".btn-bg")?.classList.add("active");
+        if (active) {
+          active.classList.add("active");
+          active.closest(".btn-bg")?.classList.add("active");
+          let parentNode = active.closest(".repo-tree-node");
+          while (parentNode) {
+            parentNode.classList.add("open");
+            parentNode = parentNode.parentElement?.closest(".repo-tree-node");
+          }
+        }
       }
     }
   }
@@ -867,60 +1186,109 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (repoTreeEl) {
       repoTreeEl.innerHTML =
-        '<div class="repo-tree-empty">Ładowanie drzewa…</div>';
+        '<div class="repo-tree-empty"><i class="fas fa-spinner fa-spin"></i> Ładowanie drzewa…</div>';
     }
 
-    const token = cachedPatToken || (settings.token || "").trim();
+    let token = cachedPatToken || (settings.token || "").trim();
+    if (!token && (settings.xorKey || encryptedPat || rawAuthData)) {
+      try {
+        token = await getPatToken(settings);
+      } catch (e) {
+        // brak tokena nie blokuje drzewa dla publicznych repozytoriów
+      }
+    }
 
-    async function tryFetchTree(branch, useToken = true) {
+    let paths = null;
+    let lastError = null;
+
+    // 1. Próba pobrania przez GitHub API git trees
+    async function tryFetchGitHubTree(branch, authToken) {
       const apiUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1&t=${Date.now()}`;
       const headers = {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
       };
-      if (useToken && token) {
-        headers.Authorization = `Bearer ${token}`;
+      if (authToken) {
+        headers.Authorization = `Bearer ${authToken}`;
       }
       return fetch(apiUrl, { ...NO_CACHE_INIT, headers });
     }
 
-    let res = null;
-    let lastStatus = 0;
-
     for (const branch of branches) {
-      // 1. Próba z tokenem (jeśli istnieje)
-      if (token) {
-        res = await tryFetchTree(branch, true);
-        if (res.status === 401) {
-          console.warn("Drzewo repo: token zwrócił 401. Próba bez autoryzacji (public repo)...");
-          res = await tryFetchTree(branch, false);
+      try {
+        let res = null;
+        if (token) {
+          res = await tryFetchGitHubTree(branch, token);
+          if (res.status === 401) {
+            console.warn("Drzewo repo: token zwrócił 401. Próba bez autoryzacji...");
+            res = await tryFetchGitHubTree(branch, "");
+          }
+        } else {
+          res = await tryFetchGitHubTree(branch, "");
         }
-      } else {
-        res = await tryFetchTree(branch, false);
-      }
 
-      if (res && res.ok) {
-        break;
+        if (res && res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.tree) && data.tree.length > 0) {
+            paths = data.tree
+              .filter((item) => item.type === "blob")
+              .map((item) => item.path)
+              .filter(Boolean)
+              .sort((a, b) => a.localeCompare(b));
+            if (paths.length > 0) break;
+          }
+        } else if (res) {
+          lastError = new Error(`GitHub API HTTP ${res.status}`);
+        }
+      } catch (err) {
+        lastError = err;
       }
-      if (res) lastStatus = res.status;
     }
 
-    if (!res || !res.ok) {
+    // 2. Fallback: jsDelivr Data API (brak limitów rate-limit, natychmiastowe dla publicznych repo)
+    if (!paths || !paths.length) {
+      for (const branch of branches) {
+        try {
+          const cdnUrl = `https://data.jsdelivr.com/v1/packages/gh/${owner}/${repo}@${branch}?structure=flat&t=${Date.now()}`;
+          const cdnRes = await fetch(cdnUrl, NO_CACHE_INIT);
+          if (cdnRes.ok) {
+            const cdnData = await cdnRes.json();
+            if (Array.isArray(cdnData.files) && cdnData.files.length > 0) {
+              paths = cdnData.files
+                .map((f) => String(f.name || "").replace(/^\/+/, ""))
+                .filter((p) => Boolean(p) && !p.startsWith(".git"))
+                .sort((a, b) => a.localeCompare(b));
+              if (paths.length > 0) {
+                console.log(`Drzewo repozytorium pobrane przez CDN jsDelivr (${paths.length} plików)`);
+                break;
+              }
+            }
+          }
+        } catch (cdnErr) {
+          console.warn("jsDelivr tree fallback nieudany:", cdnErr);
+        }
+      }
+    }
+
+    // 3. Fallback: wbudowana lista plików dla domyślnego repozytorium
+    if ((!paths || !paths.length) && owner === defaults.owner && repo === defaults.repo) {
+      console.warn("Użyto statycznej listy plików repozytorium jako fallback.");
+      paths = [...FALLBACK_REPO_FILES].sort((a, b) => a.localeCompare(b));
+    }
+
+    if (!paths || !paths.length) {
+      const errMsg = lastError ? lastError.message : "Brak danych drzewa";
       if (repoTreeEl) {
-        repoTreeEl.innerHTML = `<div class="repo-tree-error">Nie udało się załadować drzewa (Status: ${lastStatus})</div>`;
+        repoTreeEl.innerHTML = `<div class="repo-tree-error">Drzewo FAIL: ${errMsg}</div>`;
       }
-      throw new Error(`Nie udało się pobrać drzewa (${lastStatus})`);
+      throw new Error(`Nie udało się pobrać drzewa (${errMsg})`);
     }
-
-    const data = await res.json();
-    const paths = (data.tree || [])
-      .filter((item) => item.type === "blob")
-      .map((item) => item.path)
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b));
 
     repoTreePaths = paths;
     renderRepoTree(paths);
+    if (currentFilePath) {
+      setActiveFilePath(currentFilePath);
+    }
     setSystemStatus({
       message: `Drzewo OK — ${paths.length} plików (${owner}/${repo})`,
     });
@@ -1046,7 +1414,11 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   refreshTreeButton?.addEventListener("click", async () => {
+    const icon = refreshTreeButton.querySelector("i");
     try {
+      refreshTreeButton.disabled = true;
+      icon?.classList.add("fa-spin");
+      refreshTreeButton.classList.add("is-busy");
       await fetchRepoTree(loadAccountSettings());
       if (currentFilePath) setActiveFilePath(currentFilePath);
       await showNotice("Drzewo", "Lista plików odświeżona.", "success");
@@ -1055,6 +1427,10 @@ document.addEventListener("DOMContentLoaded", () => {
         repoTreeEl.innerHTML = `<div class="repo-tree-error">Drzewo FAIL: ${error.message}</div>`;
       }
       await showNotice("Błąd drzewa", error.message, "critical");
+    } finally {
+      icon?.classList.remove("fa-spin");
+      refreshTreeButton.classList.remove("is-busy");
+      refreshTreeButton.disabled = false;
     }
   });
 
@@ -1085,9 +1461,22 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll('input[name="item-template"]').forEach((radio) => {
     radio.addEventListener("change", () => {
       syncTemplateFields(radio.value);
-      focusTemplateField(radio.value);
     });
   });
+
+  document
+    .getElementById("btn-add-custom-field")
+    ?.addEventListener("click", () => {
+      const key = prompt("Podaj nazwę nowego pola (klucza):");
+      if (!key) return;
+      const cleanKey = key.trim().replace(/\s+/g, "_");
+      if (!cleanKey) return;
+      addDynamicFieldRow(cleanKey, null);
+      const added = dynamicFieldsContainer?.querySelector(
+        `input[data-key="${CSS.escape(cleanKey)}"]`,
+      );
+      added?.focus();
+    });
   confirmOk?.addEventListener("click", () => closeDialog(true));
   confirmCancel?.addEventListener("click", () => closeDialog(false));
   confirmClose?.addEventListener("click", () => closeDialog(false));
@@ -1194,7 +1583,6 @@ document.addEventListener("DOMContentLoaded", () => {
         "success",
       );
       closeAccountModal();
-      fetchRepoTree(settings).catch(() => {});
     });
 
   // Enter na haśle XOR = odszyfruj
@@ -1328,10 +1716,11 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("btn-add").addEventListener("click", () => {
         const data = getCurrentJson();
         if (!data) return;
-        if (!getEditableList(data)) {
+        const target = getEditableTarget(data);
+        if (!target) {
           showNotice(
             "Dodaj element",
-            "Otwórz plik tablicowy (auth.json) albo obiekt z nodes (linki.json).",
+            "Nieobsługiwany format dokumentu. Dokument musi być tablicą lub obiektem JSON.",
             "warning",
           );
           return;
@@ -1346,22 +1735,35 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = getCurrentJson();
             if (!data) return;
 
-            const editable = getEditableList(data);
-            if (!editable) {
-              throw new Error(
-                "Otwórz plik tablicowy (auth.json) albo obiekt z nodes (linki.json).",
-              );
+            const target = getEditableTarget(data);
+            if (!target) {
+              throw new Error("Dokument musi być poprawną tablicą lub obiektem JSON.");
             }
 
-            const template = getSelectedTemplate();
-            const item = buildTemplateItem(template, editable.list);
-            editable.list.push(item);
-            setJsonValue(editable.root);
+            const item = collectModalItem(target);
+            if (!item) return;
+
+            if (target.kind === "array" || target.kind === "nested_array") {
+              target.list.push(item);
+            } else if (target.kind === "object") {
+              if (item && typeof item === "object" && !Array.isArray(item)) {
+                Object.assign(target.root, item);
+              } else {
+                throw new Error("Nieprawidłowy format elementu dla obiektu.");
+              }
+            }
+
+            setJsonValue(target.root);
             closeTemplateModal();
             setSystemStatus({
-              message: `Dodano element (${template}.json)`,
+              message: `Dodano element do ${currentFilePath || "dokumentu"}`,
               messageState: "is-ok",
             });
+            await showNotice(
+              "Dodano element",
+              `Zaktualizowano ${currentFilePath || "dokument"}.`,
+              "success",
+            );
           } catch (error) {
             await showNotice("Dodaj element", error.message, "warning");
           }
@@ -1369,10 +1771,39 @@ document.addEventListener("DOMContentLoaded", () => {
 
       document.getElementById("btn-remove").addEventListener("click", () => {
         const data = getCurrentJson();
-        const editable = data ? getEditableList(data) : null;
-        if (editable && editable.list.length > 0) {
-          editable.list.pop();
-          setJsonValue(editable.root);
+        if (!data) return;
+        const target = getEditableTarget(data);
+        if (!target) {
+          showNotice("Usuń element", "Brak danych do usunięcia.", "warning");
+          return;
+        }
+
+        if (target.kind === "array" || target.kind === "nested_array") {
+          if (target.list.length === 0) {
+            showNotice("Usuń element", "Tablica jest już pusta.", "warning");
+            return;
+          }
+          target.list.pop();
+          setJsonValue(target.root);
+          showNotice(
+            "Usunięto element",
+            `Usunięto ostatni element (${target.list.length} pozostało).`,
+            "info",
+          );
+        } else if (target.kind === "object") {
+          const keys = Object.keys(target.root);
+          if (keys.length === 0) {
+            showNotice("Usuń element", "Obiekt jest pusty.", "warning");
+            return;
+          }
+          const lastKey = keys[keys.length - 1];
+          delete target.root[lastKey];
+          setJsonValue(target.root);
+          showNotice(
+            "Usunięto właściwość",
+            `Usunięto klucz "${lastKey}".`,
+            "info",
+          );
         }
       });
 
@@ -1396,20 +1827,6 @@ document.addEventListener("DOMContentLoaded", () => {
         .addEventListener("click", async () => {
           const data = getCurrentJson();
           if (!data) return;
-
-          if (Array.isArray(data)) {
-            for (const item of data) {
-              const currentName = String(item?.name || "").trim();
-              const fromUrl = nameFromUrl(item?.url);
-              if (!currentName && fromUrl.trim()) {
-                item.name = fromUrl;
-              }
-              if (item?.url) {
-                item.url = sanitizeUrl(item.url) || item.url;
-              }
-            }
-            setJsonValue(data);
-          }
 
           try {
             setSystemStatus({
@@ -1480,21 +1897,4 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
   }
-
-  // Obsługa przycisku odświeżania drzewa
-  refreshTreeButton?.addEventListener("click", async () => {
-    try {
-      refreshTreeButton.classList.add("fa-spin");
-      await fetchRepoTree();
-    } catch (e) {
-      console.warn("Błąd odświeżania drzewa:", e);
-    } finally {
-      refreshTreeButton.classList.remove("fa-spin");
-    }
-  });
-
-  // Wczytanie drzewa przy uruchomieniu aplikacji
-  fetchRepoTree().catch((err) => {
-    console.warn("Wstępne wczytywanie drzewa repo nie powiodło się:", err);
-  });
 });
